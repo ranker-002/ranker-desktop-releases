@@ -1,0 +1,60 @@
+name: Publish desktop
+
+# Publishes installers already built by "Build desktop" runs.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "ranker-002/FUN ref holding the version and release notes"
+        required: true
+        default: main
+      linux_run:
+        description: "Build run id for Linux"
+        required: true
+      windows_run:
+        description: "Build run id for Windows"
+        required: true
+      macos_run:
+        description: "Build run id for macOS"
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RANKER_UPDATER_PUBKEY: ${{ vars.RANKER_UPDATER_PUBKEY }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: ranker-002/FUN
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.FUN_DEPLOY_KEY }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: desktop-linux
+          path: release-artifacts/desktop-linux
+          run-id: ${{ inputs.linux_run }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: desktop-windows
+          path: release-artifacts/desktop-windows
+          run-id: ${{ inputs.windows_run }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: desktop-macos
+          path: release-artifacts/desktop-macos
+          run-id: ${{ inputs.macos_run }}
+          github-token: ${{ github.token }}
+      - name: Publish
+        run: node scripts/desktop/publish.mjs release-artifacts
