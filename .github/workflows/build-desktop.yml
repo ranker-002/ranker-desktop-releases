@@ -29,7 +29,7 @@ jobs:
           - platform: ubuntu-22.04
             name: linux
             args: "--bundles deb,appimage"
-          - platform: windows-latest
+          - platform: windows-2022
             name: windows
             args: "--target x86_64-pc-windows-msvc --bundles nsis"
     runs-on: ${{ matrix.platform }}
@@ -96,7 +96,7 @@ jobs:
           node apps/desktop/scripts/fetch-deno-sidecar.mjs --target x86_64-apple-darwin
           node apps/desktop/scripts/fetch-deno-sidecar.mjs --target aarch64-apple-darwin
           lipo -create apps/desktop/src-tauri/binaries/deno-x86_64-apple-darwin apps/desktop/src-tauri/binaries/deno-aarch64-apple-darwin -output apps/desktop/src-tauri/binaries/deno-universal-apple-darwin
-          lipo -verify_arch x86_64 arm64 apps/desktop/src-tauri/binaries/deno-universal-apple-darwin
+          lipo apps/desktop/src-tauri/binaries/deno-universal-apple-darwin -verify_arch x86_64 arm64
       - name: Build signed updater artifacts
         if: steps.want.outputs.go == 'true'
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
