@@ -1,0 +1,128 @@
+name: Build desktop
+
+# Builds RANKER Desktop from the private source on free public runners.
+# Build only: publication stays a manual, reviewed step.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or SHA of ranker-002/FUN"
+        required: true
+        default: main
+      platforms:
+        description: "Comma-separated: macos,windows,linux"
+        required: true
+        default: macos,windows,linux
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            name: macos
+            args: "--target universal-apple-darwin --bundles dmg,app"
+          - platform: ubuntu-22.04
+            name: linux
+            args: "--bundles deb,appimage"
+          - platform: windows-latest
+            name: windows
+            args: "--target x86_64-pc-windows-msvc --bundles nsis"
+    runs-on: ${{ matrix.platform }}
+    env:
+      RANKER_RELEASE_API_URL: https://rankerapp.site
+      RANKER_UPDATER_PUBKEY: ${{ vars.RANKER_UPDATER_PUBKEY }}
+      RANKER_UPDATER_ENDPOINT: https://github.com/ranker-002/ranker-desktop-releases/releases/download/desktop-beta/latest.json
+    steps:
+      - name: Skip unrequested platform
+        id: want
+        shell: bash
+        run: |
+          if [[ ",${{ inputs.platforms }}," == *",${{ matrix.name }},"* ]]; then echo "go=true" >> "$GITHUB_OUTPUT"; else echo "go=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: steps.want.outputs.go == 'true'
+        with:
+          repository: ranker-002/FUN
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.FUN_DEPLOY_KEY }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        if: steps.want.outputs.go == 'true'
+        with:
+          version: 9
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: steps.want.outputs.go == 'true'
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        if: steps.want.outputs.go == 'true'
+        with:
+          toolchain: stable
+          targets: ${{ matrix.name == 'macos' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        if: steps.want.outputs.go == 'true'
+        with:
+          workspaces: apps/desktop/src-tauri
+          cache-on-failure: true
+      - name: Verify release configuration
+        if: steps.want.outputs.go == 'true'
+        shell: bash
+        env:
+          SIGNING_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          node scripts/desktop/version.mjs --check
+          test -n "$SIGNING_KEY" && test -n "$RANKER_UPDATER_PUBKEY" || { echo "::error::Updater key pair is required"; exit 1; }
+          node scripts/desktop/release-config.mjs apps/desktop/src-tauri/updater.override.json
+      - name: Linux dependencies
+        if: steps.want.outputs.go == 'true' && matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+      - name: Install dependencies
+        if: steps.want.outputs.go == 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir apps/desktop install --ignore-workspace --frozen-lockfile
+      - name: Typecheck
+        if: steps.want.outputs.go == 'true'
+        run: pnpm --dir apps/desktop run typecheck
+      - name: Prepare both macOS sidecars
+        if: steps.want.outputs.go == 'true' && matrix.name == 'macos'
+        run: |
+          node apps/desktop/scripts/fetch-deno-sidecar.mjs --target x86_64-apple-darwin
+          node apps/desktop/scripts/fetch-deno-sidecar.mjs --target aarch64-apple-darwin
+          lipo -create apps/desktop/src-tauri/binaries/deno-x86_64-apple-darwin apps/desktop/src-tauri/binaries/deno-aarch64-apple-darwin -output apps/desktop/src-tauri/binaries/deno-universal-apple-darwin
+          lipo -verify_arch x86_64 arm64 apps/desktop/src-tauri/binaries/deno-universal-apple-darwin
+      - name: Build signed updater artifacts
+        if: steps.want.outputs.go == 'true'
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
+        env:
+          RUSTFLAGS: "-Awarnings"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          APPLE_SIGNING_IDENTITY: "-"
+        with:
+          projectPath: apps/desktop
+          tauriScript: pnpm run tauri
+          args: ${{ matrix.args }} --config src-tauri/updater.override.json
+      - name: Archive distributable files only
+        if: steps.want.outputs.go == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: desktop-${{ matrix.name }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.exe
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.exe.sig
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.dmg
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.app.tar.gz
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.app.tar.gz.sig
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.AppImage
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.AppImage.sig
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.deb
+            apps/desktop/src-tauri/target/**/release/bundle/**/*.deb.sig
