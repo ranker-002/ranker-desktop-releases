@@ -101,6 +101,10 @@ jobs:
           node apps/desktop/scripts/fetch-deno-sidecar.mjs --target aarch64-apple-darwin
           lipo -create apps/desktop/src-tauri/binaries/deno-x86_64-apple-darwin apps/desktop/src-tauri/binaries/deno-aarch64-apple-darwin -output apps/desktop/src-tauri/binaries/deno-universal-apple-darwin
           lipo apps/desktop/src-tauri/binaries/deno-universal-apple-darwin -verify_arch x86_64 arm64
+          node apps/desktop/scripts/fetch-agent-desktop-sidecar.mjs --target x86_64-apple-darwin
+          node apps/desktop/scripts/fetch-agent-desktop-sidecar.mjs --target aarch64-apple-darwin
+          lipo -create apps/desktop/src-tauri/binaries/agent-desktop-x86_64-apple-darwin apps/desktop/src-tauri/binaries/agent-desktop-aarch64-apple-darwin -output apps/desktop/src-tauri/binaries/agent-desktop-universal-apple-darwin
+          lipo apps/desktop/src-tauri/binaries/agent-desktop-universal-apple-darwin -verify_arch x86_64 arm64
       - name: Build signed updater artifacts
         if: steps.want.outputs.go == 'true'
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5
