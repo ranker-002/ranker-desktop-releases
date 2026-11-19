@@ -77,6 +77,10 @@ jobs:
           node scripts/desktop/version.mjs --check
           test -n "$SIGNING_KEY" && test -n "$RANKER_UPDATER_PUBKEY" || { echo "::error::Updater key pair is required"; exit 1; }
           node scripts/desktop/release-config.mjs apps/desktop/src-tauri/updater.override.json
+      - name: Short target dir on Windows (MSBuild path limit)
+        if: steps.want.outputs.go == 'true' && matrix.name == 'windows'
+        shell: bash
+        run: echo "CARGO_TARGET_DIR=C:\\t" >> "$GITHUB_ENV"
       - name: Linux dependencies
         if: steps.want.outputs.go == 'true' && matrix.name == 'linux'
         run: |
@@ -109,8 +113,18 @@ jobs:
           projectPath: apps/desktop
           tauriScript: pnpm run tauri
           args: ${{ matrix.args }} --config src-tauri/updater.override.json
+      - name: Archive Windows installer
+        if: steps.want.outputs.go == 'true' && matrix.name == 'windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: desktop-windows
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            C:/t/**/release/bundle/**/*.exe
+            C:/t/**/release/bundle/**/*.exe.sig
       - name: Archive distributable files only
-        if: steps.want.outputs.go == 'true'
+        if: steps.want.outputs.go == 'true' && matrix.name != 'windows'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: desktop-${{ matrix.name }}
